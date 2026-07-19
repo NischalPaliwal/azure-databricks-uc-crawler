@@ -2,3 +2,5 @@ databricks-sdk
 python-dotenv
 databricks-connect
 pyyaml
+pandas
+openpyxl

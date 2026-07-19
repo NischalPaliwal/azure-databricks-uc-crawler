@@ -53,13 +53,31 @@ def list_tables(spark: DatabricksSession, schema: str) -> list[str]:
         print(f"Failed to list tables in {schema}: {e}")
         return []
     
-def describe_table_detail(spark: DatabricksSession, schema: str, table: str) -> dict:
+def fetch_table_types(spark: DatabricksSession, schema: str) -> dict:
+    """
+    Queries information_schema.tables for the given catalog.schema to determine
+    each table's table_type (MANAGED, EXTERNAL, VIEW). This is the only reliable
+    way to tell views apart from tables in Unity Catalog.
+    """
+    try:
+        catalog, schema_name = schema.split(".", 1)
+        rows = spark.sql(
+            f"SELECT table_name, table_type FROM {catalog}.information_schema.tables "
+            f"WHERE table_schema = '{schema_name}'"
+        ).collect()
+        return {row.table_name: row.table_type for row in rows}
+    except Exception as e:
+        print(f"Failed to fetch table types in {schema}: {e}")
+        return {}
+
+def describe_table_detail(spark: DatabricksSession, schema: str, table: str, table_type: str | None = None) -> dict:
     """
     Runs DESCRIBE DETAIL to extract format, location, size, is_delta, and partitions.
     """
     record = {
         "catalog_schema": schema,
         "table": table,
+        "table_type": table_type,
         "format": None,
         "location": None,
         "size": 0,
@@ -89,12 +107,31 @@ def describe_table_detail(spark: DatabricksSession, schema: str, table: str) -> 
 def crawl_database(spark: DatabricksSession, schema: str) -> list[dict]:
     """
     Gets all tables in a catalog.schema and describes them.
+    Views are recorded without DESCRIBE DETAIL, since that command only
+    supports physical tables and raises on views.
     """
     tables = list_tables(spark, schema)
+    table_types = fetch_table_types(spark, schema)
     table_records = []
 
     for table in tables:
-        detail = describe_table_detail(spark, schema, table)
+        table_type = table_types.get(table, "UNKNOWN")
+
+        if table_type == "VIEW":
+            table_records.append({
+                "catalog_schema": schema,
+                "table": table,
+                "table_type": "VIEW",
+                "format": None,
+                "location": None,
+                "size": 0,
+                "is_delta": False,
+                "partition_columns": "[]",
+                "error": None
+            })
+            continue
+
+        detail = describe_table_detail(spark, schema, table, table_type)
         table_records.append(detail)
 
     return table_records
@@ -129,6 +166,7 @@ class TablesCrawler(BaseCrawler):
             schema = StructType([
                 StructField("catalog_schema", StringType(), True),
                 StructField("table", StringType(), True),
+                StructField("table_type", StringType(), True),
                 StructField("format", StringType(), True),
                 StructField("location", StringType(), True),
                 StructField("size", LongType(), True),

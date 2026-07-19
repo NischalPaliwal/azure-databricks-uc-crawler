@@ -64,7 +64,7 @@ class UDFsCrawler(BaseCrawler):
 
     def crawl(self) -> DataFrame:
         catalogs = list_catalogs(self.spark)
-        databases = list_databases(catalogs)
+        databases = list_databases(self.spark, catalogs)
 
         all_udf_records = []
 

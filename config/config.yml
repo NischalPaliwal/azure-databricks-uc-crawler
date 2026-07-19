@@ -1,0 +1,8 @@
+inventory_schema: crawler_inventory
+min_dbr_version: "11.3"
+disallowed_access_modes:
+  - NO_ISOLATION
+  - LEGACY_SINGLE_USER
+submit_runs_lookback_days: 30
+max_workers: 8
+dashboard_output: excel
